@@ -30,8 +30,12 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files (keep .env.example as template, exclude all others)
 .env*
+!.env.example
+
+# VS Code Local History (may contain sensitive file backups)
+.history/
 
 # vercel
 .vercel
