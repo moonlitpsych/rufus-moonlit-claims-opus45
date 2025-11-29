@@ -12,10 +12,7 @@ let _supabaseClient: SupabaseClient | null = null;
  * Lazy initialization to avoid build-time errors
  */
 export function getServerSupabase(): SupabaseClient {
-  if (_supabaseClient) {
-    return _supabaseClient;
-  }
-
+  // Always create a fresh client to avoid caching issues during debugging
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -25,6 +22,10 @@ export function getServerSupabase(): SupabaseClient {
     );
   }
 
-  _supabaseClient = createClient(supabaseUrl, supabaseKey);
-  return _supabaseClient;
+  // Debug logging
+  const keyType = process.env.SUPABASE_SERVICE_ROLE_KEY ? 'service_role' : 'anon';
+  const keyPrefix = supabaseKey.substring(0, 20);
+  console.log(`[Supabase] Connecting to ${supabaseUrl} with ${keyType} key (${keyPrefix}...)`);
+
+  return createClient(supabaseUrl, supabaseKey);
 }

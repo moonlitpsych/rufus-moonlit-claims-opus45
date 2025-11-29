@@ -117,7 +117,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<SubmitCla
         diagnosisPointers: line.diagnosis_pointers || [1],
       })),
       renderingNpi: body.rendering_provider_npi,
-      billingNpi: process.env.MOONLIT_BILLING_NPI || '',
+      billingNpi: process.env.MOONLIT_BILLING_NPI || '1275348807',
       billingTin: process.env.MOONLIT_BILLING_TIN || '',
       billingName: 'MOONLIT PLLC',
       billingAddress: {
@@ -161,10 +161,13 @@ export async function POST(request: NextRequest): Promise<NextResponse<SubmitCla
         diagnosis_codes: body.diagnosis_codes,
         service_lines: body.service_lines,
         rendering_provider_npi: body.rendering_provider_npi,
-        billing_provider_npi: process.env.MOONLIT_BILLING_NPI,
+        billing_provider_npi: process.env.MOONLIT_BILLING_NPI || '1275348807',
         total_charge: totalCharge,
         status: 'draft',
         edi_content: ediResult.ediContent,
+        // V2: Save control number for reconciliation matching
+        control_number: controlNumber,
+        submission_source: 'moonlit',
       })
       .select()
       .single();

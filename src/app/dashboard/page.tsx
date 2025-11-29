@@ -10,7 +10,8 @@ import { format, subDays } from 'date-fns';
 import { AppointmentCard } from '@/components/AppointmentCard';
 import { DateRangeFilter } from '@/components/DateRangeFilter';
 import { ClaimModal } from '@/components/claims/ClaimModal';
-import type { AppointmentWithClaim } from '@/types';
+import ReconciliationButton from '@/components/ReconciliationButton';
+import type { AppointmentWithClaim, ReconciliationResult } from '@/types';
 
 export default function DashboardPage() {
   const [appointments, setAppointments] = useState<AppointmentWithClaim[]>([]);
@@ -68,6 +69,13 @@ export default function DashboardPage() {
     setSelectedAppointment(null);
   };
 
+  const handleReconciliationComplete = (result: ReconciliationResult) => {
+    // Refresh appointments if any claims were updated
+    if (result.claimsUpdated > 0) {
+      fetchAppointments();
+    }
+  };
+
   // Filter appointments: "completed" = past confirmed appointments eligible for claims
   const now = new Date();
   const completedAppointments = appointments.filter((a) => {
@@ -92,33 +100,50 @@ export default function DashboardPage() {
                 Claims submission dashboard
               </p>
             </div>
-            <DateRangeFilter value={dateRange} onChange={setDateRange} />
+            <div className="flex items-center gap-4">
+              <ReconciliationButton onComplete={handleReconciliationComplete} />
+              <DateRangeFilter value={dateRange} onChange={setDateRange} />
+            </div>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
-        {/* Stats */}
-        <div className="grid grid-cols-4 gap-4 mb-8">
+        {/* Stats - V2 with reconciliation statuses */}
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
           <div className="bg-white rounded-lg shadow p-4">
-            <div className="text-sm text-gray-500">Total Appointments</div>
-            <div className="text-2xl font-bold text-gray-900">{appointments.length}</div>
+            <div className="text-sm text-gray-500">Appointments</div>
+            <div className="text-2xl font-bold text-gray-900">{completedAppointments.length}</div>
           </div>
           <div className="bg-white rounded-lg shadow p-4">
-            <div className="text-sm text-gray-500">Completed</div>
-            <div className="text-2xl font-bold text-green-600">{completedAppointments.length}</div>
-          </div>
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="text-sm text-gray-500">Claims Submitted</div>
-            <div className="text-2xl font-bold text-blue-600">
-              {appointments.filter((a) => a.claimStatus === 'submitted').length}
+            <div className="text-sm text-gray-500">Not Submitted</div>
+            <div className="text-2xl font-bold text-gray-400">
+              {completedAppointments.filter((a) => a.claimStatus === 'not_submitted').length}
             </div>
           </div>
           <div className="bg-white rounded-lg shadow p-4">
-            <div className="text-sm text-gray-500">Pending Claims</div>
-            <div className="text-2xl font-bold text-yellow-600">
-              {completedAppointments.filter((a) => a.claimStatus === 'not_submitted').length}
+            <div className="text-sm text-gray-500">Submitted</div>
+            <div className="text-2xl font-bold text-blue-600">
+              {appointments.filter((a) => a.claimStatus === 'submitted' || a.claimStatus === 'acknowledged').length}
+            </div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-4">
+            <div className="text-sm text-gray-500">Accepted</div>
+            <div className="text-2xl font-bold text-green-600">
+              {appointments.filter((a) => a.claimStatus === 'accepted').length}
+            </div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-4">
+            <div className="text-sm text-gray-500">Paid</div>
+            <div className="text-2xl font-bold text-emerald-600">
+              {appointments.filter((a) => a.claimStatus === 'paid').length}
+            </div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-4">
+            <div className="text-sm text-gray-500">Rejected</div>
+            <div className="text-2xl font-bold text-red-600">
+              {appointments.filter((a) => a.claimStatus === 'rejected' || a.claimStatus === 'denied').length}
             </div>
           </div>
         </div>

@@ -1,9 +1,23 @@
-// Core type definitions for Moonlit Claims V1 MVP
+// Core type definitions for Moonlit Claims V2
 
 /**
- * Claim Status - V1 subset (expandable later)
+ * Claim Status - V2 extended with reconciliation statuses
  */
-export type ClaimStatus = 'draft' | 'submitted' | 'failed';
+export type ClaimStatus =
+  | 'draft'        // Created but not submitted
+  | 'submitted'    // Uploaded to Office Ally SFTP
+  | 'acknowledged' // 999 received - Office Ally got the file
+  | 'accepted'     // 277 - Payer accepted claim for processing
+  | 'rejected'     // 277 - Payer rejected claim
+  | 'pending'      // 277 - Claim pending (needs info, under review)
+  | 'paid'         // 835 - Payment received
+  | 'denied'       // 835 - Claim denied (zero payment)
+  | 'failed';      // Our submission failed (SFTP error, etc.)
+
+/**
+ * Display status includes external submissions
+ */
+export type ClaimDisplayStatus = ClaimStatus | 'not_submitted' | 'intakeq_submitted';
 
 /**
  * IntakeQ Appointment
@@ -49,8 +63,92 @@ export interface IntakeQAppointment {
  * Appointment with claim status (enriched for dashboard)
  */
 export interface AppointmentWithClaim extends IntakeQAppointment {
-  claimStatus: ClaimStatus | 'not_submitted';
+  claimStatus: ClaimDisplayStatus;
   claimId?: string;
+}
+
+/**
+ * IntakeQ Client (from Client API)
+ * Full patient profile including demographics and insurance
+ * API: GET /clients?search={clientId}&includeProfile=true
+ */
+export interface IntakeQClient {
+  ClientId: number;
+  Name: string;
+  FirstName: string;
+  LastName: string;
+  MiddleName?: string;
+  Email: string;
+  Phone?: string;
+  HomePhone?: string;
+  WorkPhone?: string;
+  MobilePhone?: string;
+  DateOfBirth?: number; // Unix timestamp in milliseconds
+  Gender?: string; // "Male", "Female", "Other", etc.
+  MaritalStatus?: string;
+
+  // Address fields
+  Address?: string; // Combined address
+  StreetAddress?: string;
+  City?: string;
+  StateShort?: string; // 2-letter state code
+  PostalCode?: string;
+  Country?: string;
+  UnitNumber?: string;
+
+  // Primary Insurance (per IntakeQ Client API docs)
+  PrimaryInsuranceCompany?: string;
+  PrimaryInsurancePolicyNumber?: string; // Member ID
+  PrimaryInsuranceGroupNumber?: string;
+  PrimaryInsuranceHolderName?: string; // Subscriber name
+  PrimaryInsuranceRelationship?: string; // "Self", "Spouse", "Child", "Other"
+  PrimaryInsuranceHolderDateOfBirth?: number; // Unix timestamp
+
+  // Secondary Insurance (same pattern)
+  SecondaryInsuranceCompany?: string;
+  SecondaryInsurancePolicyNumber?: string;
+  SecondaryInsuranceGroupNumber?: string;
+  SecondaryInsuranceHolderName?: string;
+  SecondaryInsuranceRelationship?: string;
+  SecondaryInsuranceHolderDateOfBirth?: number;
+
+  // Billing type
+  BillingType?: 'Self-Pay' | 'Insurance' | 'Unknown';
+
+  // Metadata
+  DateCreated?: number;
+  LastActivityDate?: number;
+  LastUpdateDate?: number;
+}
+
+/**
+ * Auto-population field tracking
+ * Tracks which fields were auto-filled from IntakeQ
+ */
+export interface AutoPopulatedFields {
+  patient_first_name: boolean;
+  patient_last_name: boolean;
+  patient_dob: boolean;
+  patient_gender: boolean;
+  patient_address_street: boolean;
+  patient_address_city: boolean;
+  patient_address_state: boolean;
+  patient_address_zip: boolean;
+  payer_id: boolean;
+  member_id: boolean;
+  group_number: boolean;
+  subscriber_name: boolean;
+  subscriber_dob: boolean;
+  subscriber_relationship: boolean;
+}
+
+/**
+ * Payer match result from IntakeQ carrier name
+ */
+export interface PayerMatchResult {
+  payer: Payer | null;
+  confidence: 'high' | 'medium' | 'low' | 'none';
+  intakeqCarrierName: string | null;
 }
 
 /**
@@ -165,6 +263,18 @@ export interface Claim {
   edi_content: string | null;
   submission_error: string | null;
 
+  // V2: Reconciliation fields
+  control_number: string | null;
+  payer_claim_number: string | null;
+  acknowledgment_date: string | null;
+  accepted_date: string | null;
+  rejected_date: string | null;
+  paid_date: string | null;
+  paid_amount: number | null;
+  rejection_reason: string | null;
+  rejection_codes: string[] | null;
+  submission_source: 'moonlit' | 'intakeq' | 'manual' | 'unknown' | null;
+
   // Timestamps
   created_at: string;
   updated_at: string;
@@ -266,4 +376,183 @@ export interface SubmitClaimResponse {
   filename?: string;
   message?: string;
   error?: string;
+}
+
+// ============================================
+// V2: EDI Response Types for Reconciliation
+// ============================================
+
+/**
+ * Response file types from Office Ally
+ */
+export type EDIResponseFileType = '999' | '277' | '835';
+
+/**
+ * EDI Response File (database record)
+ */
+export interface EDIResponseFile {
+  id: string;
+  filename: string;
+  file_type: EDIResponseFileType;
+  file_content: string | null;
+  processing_status: 'pending' | 'processed' | 'failed';
+  processing_error: string | null;
+  claims_matched: number;
+  claims_updated: number;
+  downloaded_at: string;
+  processed_at: string | null;
+  created_at: string;
+}
+
+/**
+ * Claim Status Event (audit trail)
+ */
+export interface ClaimStatusEvent {
+  id: string;
+  claim_id: string;
+  response_file_id: string | null;
+  previous_status: ClaimStatus | null;
+  new_status: ClaimStatus;
+  source: 'submission' | '999' | '277' | '835' | 'manual';
+  response_code: string | null;
+  response_description: string | null;
+  payment_amount: number | null;
+  created_at: string;
+}
+
+/**
+ * Parsed 999 Functional Acknowledgment
+ */
+export interface Parsed999 {
+  originalControlNumber: string;
+  isaControlNumber: string;
+  accepted: boolean;
+  statusCode: string;
+  statusDescription: string;
+  transactionSetResponses: Array<{
+    transactionSetId: string;
+    controlNumber: string;
+    accepted: boolean;
+    statusCode: string;
+    statusDescription: string;
+  }>;
+  errorCodes?: string[];
+  includedTransactionCount: number;
+  receivedTransactionCount: number;
+  acceptedTransactionCount: number;
+}
+
+/**
+ * Parsed 277 Claim Status Info
+ */
+export interface Parsed277ClaimStatus {
+  controlNumber: string;
+  payerClaimNumber?: string;
+  statusCategoryCode: string;
+  statusCode: string;
+  statusDescription: string;
+  claimStatus: ClaimStatus;
+  effectiveDate?: string;
+  totalChargeAmount?: number;
+  patientName?: string;
+  serviceDate?: string;
+}
+
+/**
+ * Parsed 277 Response (full file)
+ */
+export interface Parsed277 {
+  isaControlNumber: string;
+  claimStatuses: Parsed277ClaimStatus[];
+  hasRejections: boolean;
+  totalClaims: number;
+}
+
+/**
+ * Parsed 835 Adjustment
+ */
+export interface Parsed835Adjustment {
+  groupCode: string; // CO, PR, OA, PI, CR
+  groupDescription: string;
+  reasonCode: string;
+  amount: number;
+}
+
+/**
+ * Parsed 835 Service Line
+ */
+export interface Parsed835ServiceLine {
+  procedureCode: string;
+  modifier?: string;
+  chargeAmount: number;
+  paidAmount: number;
+  units: number;
+  adjustments: Parsed835Adjustment[];
+}
+
+/**
+ * Parsed 835 Claim Payment
+ */
+export interface Parsed835ClaimPayment {
+  patientControlNumber: string; // Our control number
+  payerClaimNumber: string;
+  statusCode: string;
+  statusDescription: string;
+  chargeAmount: number;
+  paidAmount: number;
+  patientResponsibility: number;
+  adjustments: Parsed835Adjustment[];
+  serviceLines: Parsed835ServiceLine[];
+  patientName?: string;
+  serviceDate?: string;
+  claimStatus: ClaimStatus;
+}
+
+/**
+ * Parsed 835 Response (full file)
+ */
+export interface Parsed835 {
+  isaControlNumber: string;
+  checkNumber: string;
+  payerIdentifier: string;
+  payerName: string;
+  payeeName: string;
+  paymentDate: string;
+  paymentMethodCode: string;
+  totalPaymentAmount: number;
+  totalCharges: number;
+  totalPaid: number;
+  totalPatientResponsibility: number;
+  claimPayments: Parsed835ClaimPayment[];
+  providerAdjustments: Array<{ reasonCode: string; amount: number }>;
+  claimCount: number;
+}
+
+/**
+ * Reconciliation Result
+ */
+export interface ReconciliationResult {
+  success: boolean;
+  filesDownloaded: number;
+  filesProcessed: number;
+  claimsUpdated: number;
+  errors: string[];
+  details: {
+    file999Count: number;
+    file277Count: number;
+    file835Count: number;
+  };
+}
+
+/**
+ * Payer Name Mapping (database record)
+ */
+export interface PayerNameMapping {
+  id: string;
+  intakeq_carrier_name: string;
+  payer_id: string | null;
+  confidence: 'high' | 'medium' | 'low' | 'manual';
+  match_count: number;
+  last_matched_at: string | null;
+  created_at: string;
 }
